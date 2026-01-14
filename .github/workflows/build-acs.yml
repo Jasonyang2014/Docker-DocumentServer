@@ -1,0 +1,45 @@
+name: Build ONLYOFFICE DocsServer → Alibaba Cloud ACR
+
+on:
+  workflow_dispatch:          # 手动触发（安全）
+  schedule:
+    - cron: '0 2 * * 0'       # 每周日凌晨 2 点自动同步最新官方代码
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      # 1. 拉官方最新代码
+      - name: Checkout upstream
+        uses: actions/checkout@v4
+        with:
+          repository: ONLYOFFICE/Docker-DocumentServer
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # 2. 设置多架构构建（ONLYOFFICE 官方镜像支持 amd64 + arm64）
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 3. 登录阿里云 ACR
+      - name: Login to Alibaba Cloud Container Registry
+        run: |
+          echo "${{ secrets.ALIYUN_PWD }}" | docker login \
+            -u ${{ secrets.ALIYUN_USER }} \
+            --password-stdin ${{ secrets.ALIYUN_REGISTRY }}
+
+      # 4. 构建并推送多标签
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ secrets.ALIYUN_REGISTRY }}/${{ secrets.ALIYUN_NAMESPACE }}/auyeung-gz:${{ github.sha }}
+            ${{ secrets.ALIYUN_REGISTRY }}/${{ secrets.ALIYUN_NAMESPACE }}/auyeung-gz:latest
